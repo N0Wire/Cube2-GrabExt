@@ -2,9 +2,8 @@
 //Author: Wireless//
 ////////////////////
 
-#include <iostream>
-#include <string>
-#include <vector>
+#include "grabber.h"
+
 #include <sstream>
 
 #include <stdlib.h>
@@ -16,7 +15,7 @@
 #include <netdb.h>
 #include <unistd.h>
 
-using namespace std;
+std::vector<server> servers;
 
 class netbuf
 {
@@ -88,64 +87,39 @@ public:
         }
         while(*t++);
     }
+
+    //orginal function from sauerbraten code, a bit modified (tools.cpp)
+    void filtertext(char *dst, const char *src, bool whitespace, int len)
+	{
+		for(int c = (unsigned char)*src; c; c = (unsigned char)*++src)
+		{
+		    if(c == '\f')
+		    {
+		        if(!*++src) break;
+		        continue;
+		    }
+		    if(whitespace)
+		    {
+		        *dst++ = c;
+		        if(!--len) break;
+		    }
+		}
+		*dst = '\0';
+	}
 };
 
-struct client
+////////////////////////////////////////////////////////////////////////////////////////////////////
+Grabber::Grabber(int timeo)
 {
-    int clientnum;
-    int ping;
-    std::string name;
-    std::string team;
-    int frags;
-    int flags;
-    int deaths;
-    int teamkills;
-    int damage;
-    int health;
-    int armour;
-    int gunselect;
-    int privilege;
-    int state;
-};
-
-struct server
-{
-    unsigned long ip;
-    int port;
-    int protocol_version;
-    int maxclients;
-    std::string serverdesc;
-    std::string mapname;
-    int uptime;
-
-    int gamemode;
-    int numplayers;
-    std::vector<client> clients;
-};
-
-std::vector<server> servers;
-
-void parseextinfo(int type, unsigned char* data, int len, int listindex);
-bool updatemaster(const char* host, int port);
-bool getextinfo(unsigned long host, int port, int listindex);
-void printextinfo();
-
-int main(int argc, char* argv[])
-{
-    updatemaster("master.sauerbraten.org", 28787);
-
-    cout << "[+]Grabbing extinfo!" << endl;
-    for(int i=0;i<servers.size();i++)
-    {
-        getextinfo(servers.at(i).ip, servers.at(i).port + 1, i);
-    }
-
-    printextinfo();
-
-	return 0;
+	timeout = timeo;
 }
 
-bool updatemaster(const char* host, int port)
+Grabber::~Grabber()
+{
+}
+
+
+bool Grabber::updatemaster(const char* host, int port)
 {
     int sock = socket(AF_INET, SOCK_STREAM, 0);
     if(sock < 0)
@@ -153,7 +127,10 @@ bool updatemaster(const char* host, int port)
 
     hostent* h;
     if((h = gethostbyname(host)) == NULL)
+    {
+        std::cout << "Can't resolve hostname!" << std::endl;
         return false;
+    }
 
     sockaddr_in addr;
     addr.sin_family = AF_INET;
@@ -161,27 +138,26 @@ bool updatemaster(const char* host, int port)
     memcpy(&addr.sin_addr, h->h_addr_list[0], sizeof(in_addr));
 
     timeval tv;
-    tv.tv_sec = 10;
+    tv.tv_sec = timeout;
     tv.tv_usec = 0;
     if(setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (char*)&tv, sizeof(tv)) < 0)
     {
-        cout << "Can't set socket option!" << endl;
+        std::cout << "Can't set socket option!" << std::endl;
     }
     if(setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, (char*)&tv, sizeof(tv)) < 0)
     {
-        cout << "Can't set socket option!" << endl;
+        std::cout << "Can't set socket option!" << std::endl;
     }
 
     if(connect(sock, (struct sockaddr*)&addr, sizeof(addr)) < 0)
     {
-        cout << "Can't connect to masterserver!" << endl;
+        std::cout << "Can't connect to masterserver!" << std::endl;
         return false;
     }
 
     //fcntl(sock, F_SETFL, fcntl(sock, F_GETFL) | O_NONBLOCK);
     send(sock, "list\n", sizeof("list\n"), 0);
 
-    cout << "[+]Listening(masterserver) ..." << endl;
     char buf[4096]; int rec = 0;
     std::string data;
     while(recv(sock, buf, 4096, 0))
@@ -220,37 +196,31 @@ bool updatemaster(const char* host, int port)
     return true;
 }
 
-bool getextinfo(unsigned long host, int port, int listindex)
-{
-    if(listindex < 0 || listindex >= servers.size())
-    {
-        return false;
-    }
 
+void Grabber::getextinfo(server &srv)
+{
     sockaddr_in addr;
     int sock;
 
     if((sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0)
-        return false;
+        return;
 
     timeval tv;
-    tv.tv_sec = 5;
+    tv.tv_sec = timeout;
     tv.tv_usec = 0;
     if(setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (char*)&tv, sizeof(tv)) < 0)
     {
-        cout << "Can't set socket option!" << endl;
+        std::cout << "Can't set socket option!" << std::endl;
     }
     if(setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, (char*)&tv, sizeof(tv)) < 0)
     {
-        cout << "Can't set socket option!" << endl;
+        std::cout << "Can't set socket option!" << std::endl;
     }
 
     addr.sin_family = AF_INET;
-    addr.sin_port = htons(port);
-    addr.sin_addr.s_addr = host;
+    addr.sin_port = htons(srv.port + 1);
+    addr.sin_addr.s_addr = srv.ip;
     unsigned int slen = sizeof(sockaddr_in);
-
-    cout << "[+]Get ExtInfo from: " << inet_ntoa(addr.sin_addr) << endl;
 
     char message[3] = {1, 0, 0};
     sendto(sock, message, 3, 0, (sockaddr*)&addr, slen);
@@ -259,7 +229,12 @@ bool getextinfo(unsigned long host, int port, int listindex)
     int rec = recvfrom(sock, buf, 1024, 0, (sockaddr*)&addr, &slen);
     if(rec > 0)
 	{
-	    parseextinfo(-1, buf, rec, listindex);
+	    parseextinfo(-1, buf, rec, srv);
+	}
+	else
+	{
+		std::cout << "Timeout (IP: " << inet_ntoa(addr.sin_addr) << ")!" << std::endl;
+		return;
 	}
 
 	message[0] = 0; //EXT_UPTIME
@@ -267,19 +242,19 @@ bool getextinfo(unsigned long host, int port, int listindex)
     rec = recvfrom(sock, buf, 1024, 0, (sockaddr*)&addr, &slen);
     if(rec > 0)
 	{
-	    parseextinfo(0, buf, rec, listindex);
+	    parseextinfo(0, buf, rec, srv);
 	}
 
-    servers[listindex].clients.clear();
+    srv.clients.clear();
 	message[0] = 0; message[1] = 1; message[2] = -1; //EXT_PLAYERSTATS
 	sendto(sock, message, 3, 0, (sockaddr*)&addr, slen);
 	rec = recvfrom(sock, buf, 1024, 0, (sockaddr*)&addr, &slen); //recieve EXT_PLAYERSTATS_RESP_IDS but don't need it
-	for(int i=0;i<servers[listindex].numplayers;i++)
+	for(int i=0;i<srv.numplayers;i++)
     {
         rec = recvfrom(sock, buf, 1024, 0, (sockaddr*)&addr, &slen);
         if(rec > 0)
         {
-            parseextinfo(1, buf, rec, listindex);
+            parseextinfo(1, buf, rec, srv);
         }
     }
 
@@ -292,21 +267,15 @@ bool getextinfo(unsigned long host, int port, int listindex)
 		std::cout << rec << " bytes recieved (teamscore)!" << std::endl;
 	}*/
 
+	std::cout << "Finished IP: " << inet_ntoa(addr.sin_addr) << "!" << std::endl;
     close(sock);
-
-    return true;
 }
 
-/////////////////////////////////////////////////////////////////////////
-void parseextinfo(int type, unsigned char* data, int len, int listindex)
+
+void Grabber::parseextinfo(int type, unsigned char* data, int len, server& srv)
 {
     char buf[260];
     netbuf nbuf(data, len);
-
-    if(listindex < 0 || listindex >= servers.size())
-    {
-        return;
-    }
 
     //remove our data (which the server sends back!)
     nbuf.getint(); nbuf.getint(); nbuf.getint();
@@ -321,12 +290,12 @@ void parseextinfo(int type, unsigned char* data, int len, int listindex)
     {
     case -1:
         {
-            servers[listindex].numplayers = nbuf.getint();
+            srv.numplayers = nbuf.getint();
             int attrfollowing = nbuf.getint();
-            servers[listindex].protocol_version = nbuf.getint();
-            servers[listindex].gamemode = nbuf.getint();
+            srv.protocol_version = nbuf.getint();
+            srv.gamemode = nbuf.getint();
             nbuf.getint(); //maptime
-            servers[listindex].maxclients = nbuf.getint();
+            srv.maxclients = nbuf.getint();
             nbuf.getint(); //mode
             if(attrfollowing == 7)
             {
@@ -334,13 +303,15 @@ void parseextinfo(int type, unsigned char* data, int len, int listindex)
                 nbuf.getint(); //gamespeed
             }
             nbuf.getstring(buf, 260);
-            servers[listindex].mapname = string(buf);
+            nbuf.filtertext(buf, buf, true, 259);
+            srv.mapname = std::string(buf);
             nbuf.getstring(buf, 260);
-            servers[listindex].serverdesc = string(buf);
+            nbuf.filtertext(buf, buf, true, 259);
+            srv.serverdesc = std::string(buf);
         }break;
     case 0: //uptime
         {
-            servers[listindex].uptime = nbuf.getint();
+            srv.uptime = nbuf.getint();
         }break;
     case 1: //playerstats
         {
@@ -350,16 +321,16 @@ void parseextinfo(int type, unsigned char* data, int len, int listindex)
             temp.clientnum = nbuf.getint();
             temp.ping = nbuf.getint();
             nbuf.getstring(buf, 260);
-            temp.name = string(buf);
+            temp.name = std::string(buf);
             nbuf.getstring(buf, 260);
-            temp.team = string(buf);
+            temp.team = std::string(buf);
             temp.frags = nbuf.getint();     temp.flags = nbuf.getint();
             temp.deaths = nbuf.getint();    temp.teamkills = nbuf.getint();
             temp.damage = nbuf.getint();    temp.health = nbuf.getint();
             temp.armour = nbuf.getint();    temp.gunselect = nbuf.getint();
             temp.privilege = nbuf.getint(); temp.state = nbuf.getint();
 
-            servers[listindex].clients.push_back(temp);
+            srv.clients.push_back(temp);
 
         }break;
     case 2: //teaminfo
@@ -376,30 +347,3 @@ void parseextinfo(int type, unsigned char* data, int len, int listindex)
         break;
     }
 }
-
-void printextinfo()
-{
-    for(int i=0;i<servers.size();i++)
-    {
-        cout << servers[i].serverdesc << endl;
-        cout << "##################" << endl;
-        cout << "->Uptime: " << servers[i].uptime << endl;
-        cout << "->Maxclients: " << servers[i].maxclients << endl;
-        cout << "->Gamemode: " << servers[i].gamemode << endl;
-        cout << "->Map: " << servers[i].mapname << endl;
-        cout << "->Clients: " << servers[i].numplayers << endl;
-        for(int a=0;a<servers[i].clients.size();a++)
-        {
-            cout << " +Name: " << servers[i].clients[a].name << " | Cn: " << servers[i].clients[a].clientnum << endl;
-            cout << "  (Team: " << servers[i].clients[a].team << ")" << endl;
-            cout << "  (Frags: " << servers[i].clients[a].frags << ")" << endl;
-            cout << "  (Deaths: " << servers[i].clients[a].deaths << ")" << endl;
-            cout << "  (Teamkills: " << servers[i].clients[a].teamkills << ")" << endl;
-            cout << "  (Privilege: " << servers[i].clients[a].privilege << ")" << endl;
-        }
-
-        if(i != (servers.size() - 1))
-            cout << endl << endl;
-    }
-}
-
