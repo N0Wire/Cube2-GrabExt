@@ -90,28 +90,29 @@ public:
 
     //orginal function from sauerbraten code, a bit modified (tools.cpp)
     void filtertext(char *dst, const char *src, bool whitespace, int len)
-	{
-		for(int c = (unsigned char)*src; c; c = (unsigned char)*++src)
-		{
-		    if(c == '\f')
-		    {
-		        if(!*++src) break;
-		        continue;
-		    }
-		    if(whitespace)
-		    {
-		        *dst++ = c;
-		        if(!--len) break;
-		    }
-		}
-		*dst = '\0';
-	}
+    {
+        for(int c = (unsigned char)*src; c; c = (unsigned char)*++src)
+        {
+            if(c == '\f')
+            {
+                if(!*++src) break;
+                continue;
+            }
+            if(whitespace)
+            {
+                *dst++ = c;
+                if(!--len) break;
+            }
+        }
+        *dst = '\0';
+    }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
-Grabber::Grabber(int timeo)
+Grabber::Grabber(int timeo, std::vector<unsigned long> blist)
 {
-	timeout = timeo;
+    timeout = timeo;
+    blacklist = blist;
 }
 
 Grabber::~Grabber()
@@ -167,10 +168,10 @@ bool Grabber::updatemaster(const char* host, int port)
 
     close(sock);
 
-	std::stringstream ss(data.c_str());
-	std::string line;
+    std::stringstream ss(data.c_str());
+    std::string line;
 
-	while(getline(ss, line, '\n'))
+    while(getline(ss, line, '\n'))
     {
         int pos = line.find(' ');
         if(pos == std::string::npos)
@@ -185,8 +186,20 @@ bool Grabber::updatemaster(const char* host, int port)
         unsigned long tip;
         inet_aton(line.substr(0, pos).c_str(), (in_addr*)&tip);
 
+        bool blacklisted = false;
+        for(int i=0;i<blacklist.size();i++)
+        {
+            if(blacklist[i] == tip)
+            {
+                blacklisted = true;
+                break;
+            }
+        }
+
+        if(blacklisted)
+            continue;
+
         server serv;
-        //memset(&serv, 0, sizeof(server));
         serv.ip = tip;
         serv.port = prt;
 
@@ -228,28 +241,28 @@ void Grabber::getextinfo(server &srv)
     unsigned char buf[1024];
     int rec = recvfrom(sock, buf, 1024, 0, (sockaddr*)&addr, &slen);
     if(rec > 0)
-	{
-	    parseextinfo(-1, buf, rec, srv);
-	}
-	else
-	{
-		std::cout << "Timeout (IP: " << inet_ntoa(addr.sin_addr) << ")!" << std::endl;
-		return;
-	}
+    {
+        parseextinfo(-1, buf, rec, srv);
+    }
+    else
+    {
+        std::cout << "Timeout (IP: " << inet_ntoa(addr.sin_addr) << ")!" << std::endl;
+        return;
+    }
 
-	message[0] = 0; //EXT_UPTIME
-	sendto(sock, message, 3, 0, (sockaddr*)&addr, slen);
+    message[0] = 0; //EXT_UPTIME
+    sendto(sock, message, 3, 0, (sockaddr*)&addr, slen);
     rec = recvfrom(sock, buf, 1024, 0, (sockaddr*)&addr, &slen);
     if(rec > 0)
-	{
-	    parseextinfo(0, buf, rec, srv);
-	}
+    {
+        parseextinfo(0, buf, rec, srv);
+    }
 
     srv.clients.clear();
-	message[0] = 0; message[1] = 1; message[2] = -1; //EXT_PLAYERSTATS
-	sendto(sock, message, 3, 0, (sockaddr*)&addr, slen);
-	rec = recvfrom(sock, buf, 1024, 0, (sockaddr*)&addr, &slen); //recieve EXT_PLAYERSTATS_RESP_IDS but don't need it
-	for(int i=0;i<srv.numplayers;i++)
+    message[0] = 0; message[1] = 1; message[2] = -1; //EXT_PLAYERSTATS
+    sendto(sock, message, 3, 0, (sockaddr*)&addr, slen);
+    rec = recvfrom(sock, buf, 1024, 0, (sockaddr*)&addr, &slen); //recieve EXT_PLAYERSTATS_RESP_IDS but don't need it
+    for(int i=0;i<srv.numplayers;i++)
     {
         rec = recvfrom(sock, buf, 1024, 0, (sockaddr*)&addr, &slen);
         if(rec > 0)
@@ -259,15 +272,14 @@ void Grabber::getextinfo(server &srv)
     }
 
     /*message[0] = 0; message[1] = 2; //EXT_TEAMSCORE
-	sendto(sock, message, 3, 0, (sockaddr*)&addr, slen);
+    sendto(sock, message, 3, 0, (sockaddr*)&addr, slen);
     rec = recvfrom(sock, buf, 1024, 0, (sockaddr*)&addr, &slen);
     if(rec > 0)
-	{
-	    parseextinfo(2, buf, rec, listindex);
-		std::cout << rec << " bytes recieved (teamscore)!" << std::endl;
-	}*/
+    {
+        parseextinfo(2, buf, rec, listindex);
+        std::cout << rec << " bytes recieved (teamscore)!" << std::endl;
+    }*/
 
-	std::cout << "Finished IP: " << inet_ntoa(addr.sin_addr) << "!" << std::endl;
     close(sock);
 }
 
@@ -329,6 +341,10 @@ void Grabber::parseextinfo(int type, unsigned char* data, int len, server& srv)
             temp.damage = nbuf.getint();    temp.health = nbuf.getint();
             temp.armour = nbuf.getint();    temp.gunselect = nbuf.getint();
             temp.privilege = nbuf.getint(); temp.state = nbuf.getint();
+            //get ip
+            temp.ip_range[0] = (unsigned char)nbuf.getint();
+            temp.ip_range[1] = (unsigned char)nbuf.getint();
+            temp.ip_range[2] = (unsigned char)nbuf.getint();
 
             srv.clients.push_back(temp);
 
@@ -346,4 +362,11 @@ void Grabber::parseextinfo(int type, unsigned char* data, int len, server& srv)
         //error
         break;
     }
+}
+
+std::string iptostr(unsigned long ip)
+{
+    in_addr addr; addr.s_addr = ip;
+    std::string ret(inet_ntoa(addr));
+    return ret;
 }

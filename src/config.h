@@ -11,19 +11,19 @@
 class Config
 {
 private:
-	std::string masterhost;
-	int masterport;
-	int timeoutsec;
+    std::string masterhost;
+    int masterport;
+    int timeoutsec;
 
-	void parseline(std::string line);
+    void parseline(std::string line);
 public:
-	std::vector<unsigned long> blacklist;
+    std::vector<unsigned long> blacklist;
 
-	Config(const char* cfile);
-	~Config();
-	std::string getmasterhost();
-	int getmasterport();
-	int gettimeoutsec();
+    Config(const char* cfile);
+    ~Config();
+    std::string getmasterhost();
+    int getmasterport();
+    int gettimeoutsec();
 };
 
 #endif

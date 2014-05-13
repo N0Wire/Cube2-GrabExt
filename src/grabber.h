@@ -25,6 +25,7 @@ struct client
     int gunselect;
     int privilege;
     int state;
+    unsigned char ip_range[3];
 };
 
 struct server
@@ -47,13 +48,16 @@ extern std::vector<server> servers;
 class Grabber
 {
 private:
-	int timeout;
+    int timeout;
+    std::vector<unsigned long> blacklist;
 public:
-	Grabber(int timeo);
-	~Grabber();
-	bool updatemaster(const char* host, int port);
-	void getextinfo(server &srv);
-	void parseextinfo(int type, unsigned char* data, int len, server &srv);
+    Grabber(int timeo, std::vector<unsigned long> blist);
+    ~Grabber();
+    bool updatemaster(const char* host, int port);
+    void getextinfo(server &srv);
+    void parseextinfo(int type, unsigned char* data, int len, server &srv);
 };
+
+std::string iptostr(unsigned long ip);
 
 #endif
