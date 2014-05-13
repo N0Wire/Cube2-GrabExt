@@ -341,10 +341,6 @@ void Grabber::parseextinfo(int type, unsigned char* data, int len, server& srv)
             temp.damage = nbuf.getint();    temp.health = nbuf.getint();
             temp.armour = nbuf.getint();    temp.gunselect = nbuf.getint();
             temp.privilege = nbuf.getint(); temp.state = nbuf.getint();
-            //get ip
-            temp.ip_range[0] = (unsigned char)nbuf.getint();
-            temp.ip_range[1] = (unsigned char)nbuf.getint();
-            temp.ip_range[2] = (unsigned char)nbuf.getint();
 
             srv.clients.push_back(temp);
 

@@ -56,7 +56,6 @@ void printextinfo(bool playerinfo)
             cout << " +Name: " << servers[i].clients[a].name << " | Cn: " << servers[i].clients[a].clientnum << endl;
             if(!playerinfo)
                 continue;
-            cout << "  (IP-range: " << (unsigned int)servers[i].clients[a].ip_range[0] << "." << (unsigned int)servers[i].clients[a].ip_range[1] << "." << (unsigned int)servers[i].clients[a].ip_range[2] << ")" << endl;
             cout << "  (Team: " << servers[i].clients[a].team << ")" << endl;
             cout << "  (Frags: " << servers[i].clients[a].frags << ")" << endl;
             cout << "  (Deaths: " << servers[i].clients[a].deaths << ")" << endl;
